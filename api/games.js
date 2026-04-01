@@ -1,4 +1,4 @@
-const GITHUB_REPO = 'bidou-neo/videogames';
+const GITHUB_REPO = 'bidou-neo/videgames';
 const GITHUB_FILE = 'games.json';
 const TOKEN = process.env.GITHUB_TOKEN;
 
