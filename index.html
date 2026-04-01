@@ -307,7 +307,7 @@ async function loadGames() {
     if (res.ok) {
       const data = await res.json();
       githubSha = data.sha;
-      games = data.games.length ? data.games : defaultGames();
+      if (data.games.length) { games = data.games; } else { const raw = localStorage.getItem(STORAGE_KEY); games = raw ? JSON.parse(raw) : defaultGames(); }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
     } else {
       const raw = localStorage.getItem(STORAGE_KEY);
