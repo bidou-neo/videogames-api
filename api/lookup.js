@@ -65,54 +65,68 @@ export default async function handler(req, res) {
       if (finalUrl.includes(key)) { platform = val; break; }
     }
 
-    // --- TITLE from og:title, strip "Prix " prefix and platform suffix ---
+    // --- TITLE from og:title ---
+    const platforms = ['Xbox Series X','Xbox Series S','Xbox One','Xbox 360','Xbox','PS5','PS4','PS3','PS2','PS1','Switch','PC','Wii U','Wii','GameCube','N64','SNES','NES','Game Boy','GBA','DS','3DS','Master System','Mega Drive','Saturn','Dreamcast'];
+    const platformRegex = new RegExp('\\s+(' + platforms.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')\\s*$', 'i');
+
     let title = null;
     const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i)
                  || html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:title"/i);
     if (ogTitle) {
       title = ogTitle[1]
         .replace(/^Prix\s+/i, '')
-        .replace(/\s*:\s*Cote\s*[&&].*$/i, '')
+        .replace(/\s*:\s*Cote\s*.*$/i, '')
         .replace(/\s*-\s*Prix.*$/i, '')
-        .replace(/\s+sur\s+(Xbox Series X|Xbox One|Xbox 360|Xbox|PS5|PS4|PS3|PS2|PS1|Switch|PC|Wii U|Wii|GameCube|N64|SNES|NES|Game Boy|GBA|DS|3DS|Master System|Mega Drive|Saturn|Dreamcast)\s*$/i, '')
+        .replace(platformRegex, '')
         .trim();
     }
 
-    // Fallback: page <title>
     if (!title) {
       const pageTitle = html.match(/<title>([^<]+)<\/title>/i);
       if (pageTitle) {
         title = pageTitle[1]
           .replace(/^Prix\s+/i, '')
           .replace(/\s*:?\s*Cote.*$/i, '')
-          .replace(/\s*-?\s*Prix.*$/i, '')
-          .replace(/\s+sur\s+\S+.*$/i, '')
+          .replace(platformRegex, '')
           .trim();
       }
     }
 
-    // --- COVER: look for product image in HTML (not og:image which is the logo) ---
+    // --- COVER: look for catalog product image specifically ---
     let cover = null;
 
-    // Try fancybox link (main product image)
-    const fancyMatch = html.match(/class="fancybox"[^>]*href="([^"]+\.(?:jpg|png|webp))"/i)
-                    || html.match(/href="([^"]+\.(?:jpg|png|webp))"[^>]*class="fancybox"/i);
-    if (fancyMatch) cover = fancyMatch[1];
-
-    // Try img with product/cover in src
-    if (!cover) {
-      const imgMatches = [...html.matchAll(/<img[^>]*src="([^"]+\/img\/(?:catalog|product|jeux|cover)[^"]+\.(?:jpg|png|webp))"/gi)];
-      if (imgMatches.length) cover = imgMatches[0][1];
+    // Try fancybox main product image
+    const fancyMatch = html.match(/href="(https?:\/\/(?:www\.)?voxgaming\.fr\/img\/catalog\/[^"]+\.(?:jpg|png|webp))"/i)
+                    || html.match(/href="(\/img\/catalog\/[^"]+\.(?:jpg|png|webp))"/i);
+    if (fancyMatch) {
+      cover = fancyMatch[1];
+      if (cover.startsWith('/')) cover = 'https://www.voxgaming.fr' + cover;
     }
 
-    // Try any large img near the title area
+    // Try img tag with catalog path
     if (!cover) {
-      const imgMatches = [...html.matchAll(/<img[^>]*src="(https?:\/\/(?:www\.)?voxgaming\.fr\/img\/[^"]+\.(?:jpg|png|webp))"/gi)];
-      const filtered = imgMatches.map(m => m[1]).filter(u => !u.includes('logo') && !u.includes('og-vox') && !u.includes('banner') && !u.includes('icon'));
+      const imgMatch = html.match(/<img[^>]*src="((?:https?:\/\/(?:www\.)?voxgaming\.fr)?\/img\/catalog\/[^"]+\.(?:jpg|png|webp))"/i);
+      if (imgMatch) {
+        cover = imgMatch[1];
+        if (cover.startsWith('/')) cover = 'https://www.voxgaming.fr' + cover;
+      }
+    }
+
+    // Try any voxgaming img excluding avatars, logos, banners
+    if (!cover) {
+      const imgs = [...html.matchAll(/<img[^>]*src="(https?:\/\/(?:www\.)?voxgaming\.fr\/img\/[^"]+\.(?:jpg|png|webp))"/gi)];
+      const filtered = imgs.map(m => m[1]).filter(u =>
+        !u.includes('/avatar/') &&
+        !u.includes('og-vox') &&
+        !u.includes('logo') &&
+        !u.includes('banner') &&
+        !u.includes('icon') &&
+        !u.includes('rakuten') &&
+        !u.includes('fnac') &&
+        !u.includes('amazon')
+      );
       if (filtered.length) cover = filtered[0];
     }
-
-    if (cover && cover.startsWith('/')) cover = 'https://www.voxgaming.fr' + cover;
 
     if (!title) return res.status(404).json({ error: 'Titre non trouvé' });
 
