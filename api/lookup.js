@@ -31,30 +31,6 @@ export default async function handler(req, res) {
 
     const html = await searchRes.text();
 
-    // --- TITLE from og:title meta tag ---
-    let title = null;
-    const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i)
-                 || html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:title"/i);
-    if (ogTitle) {
-      title = ogTitle[1]
-        .replace(/\s*:\s*Cote\s*&.*$/i, '')
-        .replace(/\s*-\s*Prix.*$/i, '')
-        .replace(/\s*sur\s+(Xbox Series X|PS5|PS4|Switch|Xbox One|PC)\s*$/i, '')
-        .trim();
-    }
-
-    // Fallback: page <title>
-    if (!title) {
-      const pageTitle = html.match(/<title>([^<]+)<\/title>/i);
-      if (pageTitle) {
-        title = pageTitle[1]
-          .replace(/\s*:?\s*Cote.*$/i, '')
-          .replace(/\s*-?\s*Prix.*$/i, '')
-          .replace(/\s*sur\s+(Xbox Series X|PS5|PS4|Switch|Xbox One|PC)\s*$/i, '')
-          .trim();
-      }
-    }
-
     // --- PLATFORM from URL ---
     const urlPlatformMap = {
       '/xbox-series/': 'Xbox Series X',
@@ -66,8 +42,8 @@ export default async function handler(req, res) {
       '/ps3/': 'PS3',
       '/ps2/': 'PS2',
       '/ps1/': 'PS1',
-      '/switch/': 'Switch',
       '/switch2/': 'Switch',
+      '/switch/': 'Switch',
       '/wii-u/': 'Wii U',
       '/wii/': 'Wii',
       '/gamecube/': 'GameCube',
@@ -89,11 +65,54 @@ export default async function handler(req, res) {
       if (finalUrl.includes(key)) { platform = val; break; }
     }
 
-    // --- COVER from og:image ---
+    // --- TITLE from og:title, strip "Prix " prefix and platform suffix ---
+    let title = null;
+    const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i)
+                 || html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:title"/i);
+    if (ogTitle) {
+      title = ogTitle[1]
+        .replace(/^Prix\s+/i, '')
+        .replace(/\s*:\s*Cote\s*[&&].*$/i, '')
+        .replace(/\s*-\s*Prix.*$/i, '')
+        .replace(/\s+sur\s+(Xbox Series X|Xbox One|Xbox 360|Xbox|PS5|PS4|PS3|PS2|PS1|Switch|PC|Wii U|Wii|GameCube|N64|SNES|NES|Game Boy|GBA|DS|3DS|Master System|Mega Drive|Saturn|Dreamcast)\s*$/i, '')
+        .trim();
+    }
+
+    // Fallback: page <title>
+    if (!title) {
+      const pageTitle = html.match(/<title>([^<]+)<\/title>/i);
+      if (pageTitle) {
+        title = pageTitle[1]
+          .replace(/^Prix\s+/i, '')
+          .replace(/\s*:?\s*Cote.*$/i, '')
+          .replace(/\s*-?\s*Prix.*$/i, '')
+          .replace(/\s+sur\s+\S+.*$/i, '')
+          .trim();
+      }
+    }
+
+    // --- COVER: look for product image in HTML (not og:image which is the logo) ---
     let cover = null;
-    const ogImage = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i)
-                 || html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"/i);
-    if (ogImage) cover = ogImage[1];
+
+    // Try fancybox link (main product image)
+    const fancyMatch = html.match(/class="fancybox"[^>]*href="([^"]+\.(?:jpg|png|webp))"/i)
+                    || html.match(/href="([^"]+\.(?:jpg|png|webp))"[^>]*class="fancybox"/i);
+    if (fancyMatch) cover = fancyMatch[1];
+
+    // Try img with product/cover in src
+    if (!cover) {
+      const imgMatches = [...html.matchAll(/<img[^>]*src="([^"]+\/img\/(?:catalog|product|jeux|cover)[^"]+\.(?:jpg|png|webp))"/gi)];
+      if (imgMatches.length) cover = imgMatches[0][1];
+    }
+
+    // Try any large img near the title area
+    if (!cover) {
+      const imgMatches = [...html.matchAll(/<img[^>]*src="(https?:\/\/(?:www\.)?voxgaming\.fr\/img\/[^"]+\.(?:jpg|png|webp))"/gi)];
+      const filtered = imgMatches.map(m => m[1]).filter(u => !u.includes('logo') && !u.includes('og-vox') && !u.includes('banner') && !u.includes('icon'));
+      if (filtered.length) cover = filtered[0];
+    }
+
+    if (cover && cover.startsWith('/')) cover = 'https://www.voxgaming.fr' + cover;
 
     if (!title) return res.status(404).json({ error: 'Titre non trouvé' });
 
